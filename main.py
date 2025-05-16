@@ -5,12 +5,15 @@ from discord.ext import commands
 from google import genai
 from google.genai import types
 
+# Lấy biến môi trường
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
+# Cấu hình Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
 model = "gemini-2.0-flash"
 
+# Cấu hình Discord bot
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -22,15 +25,26 @@ HISTORY_FILE = "history/thuy.json"
 def load_history():
     if not os.path.exists(HISTORY_FILE):
         return []
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-        return [types.Content(**msg) for msg in raw]
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                return []  # Nếu file rỗng
+            raw = json.loads(content)
+            return [types.Content(**msg) for msg in raw]
+    except Exception as e:
+        print(f"📛 Lỗi khi load history: {e}")
+        return []
 
 # Hàm ghi lịch sử vào file
 def save_history(history):
-    raw = [msg.to_dict() for msg in history]
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(raw, f, ensure_ascii=False, indent=2)
+    try:
+        os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
+        raw = [msg.model_dump() for msg in history]
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(raw, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"📛 Lỗi khi lưu history: {e}")
 
 @bot.event
 async def on_ready():
@@ -44,7 +58,7 @@ async def ask_tu(ctx, *, prompt: str):
         # Load lịch sử từ file
         history = load_history()[-6:]
 
-        # Prompt mở đầu về vai trò
+        # Prompt vai trò ban đầu
         messages = [
             types.Content(
                 role="user",
@@ -74,7 +88,7 @@ async def ask_tu(ctx, *, prompt: str):
 
         await ctx.send(f"🌸 **Tú:** {reply}")
 
-        # Cập nhật lịch sử và lưu lại
+        # Lưu lại lịch sử
         history.append(new_user_msg)
         history.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
         save_history(history)
