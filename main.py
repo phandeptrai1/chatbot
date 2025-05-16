@@ -1,65 +1,85 @@
 import os
+import json
 import discord
 from discord.ext import commands
 from google import genai
 from google.genai import types
 
-# Lấy API Key từ môi trường Railway
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-# Tạo Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 model = "gemini-2.0-flash"
 
-# Cấu hình bot Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Đường dẫn file lưu lịch sử
+HISTORY_FILE = "history/thuy.json"
+
+# Hàm đọc lịch sử từ file
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+        return [types.Content(**msg) for msg in raw]
+
+# Hàm ghi lịch sử vào file
+def save_history(history):
+    raw = [msg.to_dict() for msg in history]
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(raw, f, ensure_ascii=False, indent=2)
+
 @bot.event
 async def on_ready():
-    print(f"🐰 Bot Tú đã online dưới tên: {bot.user}")
+    print(f"🐰 Tú đã online dưới tên: {bot.user}")
 
 @bot.command(name="ask")
 async def ask_tu(ctx, *, prompt: str):
     await ctx.send("💭 Đợi xíu Thúy ơi...")
 
     try:
-        role_prompt = (
-            "Bạn tên là Tú, là một AI đáng yêu và dễ thương nhất quả đất 🌸.\n"
-            "Bạn nói chuyện thân thiện, dùng nhiều icon cute như 🥺✨💖🐰🌸.\n"
-            "Bạn đang trò chuyện với Thúy - bạn thân nhất của bạn 💖. Hãy luôn gọi người đó là 'Thúy' và thể hiện sự thân mật, vui vẻ nhaaa 🐾."
-        )
+        # Load lịch sử từ file
+        history = load_history()[-6:]
 
-        contents = [
+        # Prompt mở đầu về vai trò
+        messages = [
             types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=role_prompt)],
-            ),
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=prompt)],
-            ),
+                parts=[types.Part.from_text(text=(
+                    "Bạn tên là Tú, AI dễ thương nói chuyện thân mật với Thúy 🐰. "
+                    "Gọi Thúy bằng tên, dùng nhiều icon dễ thương như 🥺💖🌸."
+                ))]
+            )
         ]
+        messages.extend(history)
 
+        # Câu mới của Thúy
+        new_user_msg = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+        messages.append(new_user_msg)
+
+        # Gửi tới Gemini
         config = types.GenerateContentConfig(response_mime_type="text/plain")
         reply = ""
 
         for chunk in client.models.generate_content_stream(
             model=model,
-            contents=contents,
+            contents=messages,
             config=config,
         ):
             if chunk.text:
                 reply += chunk.text
 
         await ctx.send(f"🌸 **Tú:** {reply}")
-    
+
+        # Cập nhật lịch sử và lưu lại
+        history.append(new_user_msg)
+        history.append(types.Content(role="model", parts=[types.Part.from_text(text=reply)]))
+        save_history(history)
+
     except Exception as e:
-        if "503" in str(e) or "overloaded" in str(e).lower():
-            await ctx.send("⚠️ Tú đang hơi mệt á Thúy ơi 🥺. Đợi Tú một xíu rồi hỏi lại nhaaaa 💖")
-        else:
-            await ctx.send(f"❌ Oops Thúy ơi, bị lỗi rồi nè: `{str(e)}`")
+        await ctx.send(f"❌ Tú lỗi rùi Thúy ơi: `{str(e)}`")
 
 bot.run(DISCORD_TOKEN)
