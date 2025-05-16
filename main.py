@@ -4,22 +4,22 @@ from discord.ext import commands
 from google import genai
 from google.genai import types
 
-# Biến môi trường Railway
+# Lấy API Key từ biến môi trường (Railway)
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 
-# Tạo client Gemini
+# Tạo Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
-model = "gemini-2.0-flash-lite"
+model = "gemini-2.0-flash"  # Model bạn yêu cầu
 
-# Cấu hình Discord bot
+# Cấu hình bot Discord
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f"✅ Bot đã đăng nhập: {bot.user}")
+    print(f"🤖 Bot đã sẵn sàng: {bot.user}")
 
 @bot.command(name="ask")
 async def ask_gemini(ctx, *, prompt: str):
@@ -47,6 +47,9 @@ async def ask_gemini(ctx, *, prompt: str):
 
         await ctx.send(f"🤖 **Gemini:** {reply}")
     except Exception as e:
-        await ctx.send(f"❌ Lỗi: {str(e)}")
+        if "503" in str(e) or "overloaded" in str(e).lower():
+            await ctx.send("⚠️ Model hiện đang quá tải. Vui lòng thử lại sau vài phút.")
+        else:
+            await ctx.send(f"❌ Lỗi: {str(e)}")
 
 bot.run(DISCORD_TOKEN)
